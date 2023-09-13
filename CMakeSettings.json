@@ -1,0 +1,32 @@
+﻿{
+  "configurations": [
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\out\\build\\${name}",
+      "installRoot": "${projectDir}\\out\\install\\${name}",
+      "cmakeCommandArgs": "-DWX_LIB_PATH=C:/lib/wxWidgets/lib",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "fastrtps_DIR",
+          "value": "C:/Program Files/eProsima/fastrtps 2.11.2/cmake",
+          "type": "PATH"
+        },
+        {
+          "name": "foonathan_memory_DIR",
+          "value": "C:/Program Files/eProsima/fastrtps 2.11.2/cmake",
+          "type": "PATH"
+        },
+        {
+          "name": "fastcdr_DIR",
+          "value": "C:/Program Files/eProsima/fastrtps 2.11.2/cmake",
+          "type": "PATH"
+        }
+      ]
+    }
+  ]
+}

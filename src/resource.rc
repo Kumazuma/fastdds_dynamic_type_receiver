@@ -1,0 +1,4 @@
+#include <wx/msw/wx.rc>
+
+ID_SVG_PLAY RCDATA "../resource/play-svgrepo-com.svg"
+ID_SVG_STOP RCDATA "../resource/stop-svgrepo-com.svg"
