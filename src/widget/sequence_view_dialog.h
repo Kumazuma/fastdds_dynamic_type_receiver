@@ -77,9 +77,14 @@ void SequenceViewDialog<T>::SetValue(const ReadOnlySequence<T>& value)
 template <>
 class SequenceViewDialog<uint8_t> : public wxDialog
 {
+	DECLARE_EVENT_TABLE();
 public:
 	SequenceViewDialog(wxWindow* parent, wxWindowID id, const wxString& title);
 	void SetValue(const ReadOnlySequence<uint8_t>& value);
+
+protected:
+	void OnCommandSaveFile(wxCommandEvent& evt);
+	void OnCommandOpenAsImage(wxCommandEvent& evt);
 
 private:
 	wxToolBar* m_pToolbar;

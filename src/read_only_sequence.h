@@ -47,7 +47,7 @@ public:
 	}
 
 	size_t size() const { return m_length; }
-
+	const std::vector<T>& Get() const { return *m_vector; }
 private:
 	std::shared_ptr<std::vector<T>> m_vector;
 	size_t m_length;
