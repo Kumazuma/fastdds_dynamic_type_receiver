@@ -2,48 +2,46 @@
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
 
-BEGIN_EVENT_TABLE(HexViewCtrl, wxControl)
+BEGIN_EVENT_TABLE(HexViewCtrl, wxScrolled<wxWindow>)
 	EVT_PAINT(HexViewCtrl::OnPaint)
-	EVT_SIZE(HexViewCtrl::OnSize)
 	EVT_UPDATE_UI(wxID_ANY, HexViewCtrl::DoUpdateWindowUI)
-	EVT_SCROLLWIN_THUMBTRACK(HexViewCtrl::OnThumbTracked)
-	EVT_SCROLLWIN_THUMBRELEASE(HexViewCtrl::OnThumbTracked)
-	EVT_SCROLLWIN_PAGEUP(HexViewCtrl::OnScrollWinPageUp)
-	EVT_SCROLLWIN_PAGEDOWN(HexViewCtrl::OnScrollWinPageDown)
-	EVT_SCROLLWIN_TOP(HexViewCtrl::OnScrollWinPageUp)
-	EVT_SCROLLWIN_BOTTOM(HexViewCtrl::OnScrollWinPageDown)
-	EVT_SCROLLWIN_LINEUP(HexViewCtrl::OnScrollWinLineUp)
-	EVT_SCROLLWIN_LINEDOWN(HexViewCtrl::OnScrollWinLineDown)
+	EVT_SIZE(HexViewCtrl::OnSize)
+	EVT_SCROLLWIN(HexViewCtrl::OnScrollWinEvent)
 END_EVENT_TABLE()
 
 HexViewCtrl::HexViewCtrl()
-: wxControl()
-, m_offset(0)
-, m_numOfLines(0)
-, m_numOfLinesViewing(0) {}
+: wxScrolled<wxWindow>()
+, m_numOfLines(0) {}
 
-HexViewCtrl::HexViewCtrl(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style,
-						const wxValidator& validator, const wxString& name)
+HexViewCtrl::HexViewCtrl(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style, const wxString& name)
 : HexViewCtrl()
 {
-	if (!Create(parent, id, pos, size, style, validator, name))
+	if (!Create(parent, id, pos, size, style, name))
 	{
 		return;
 	}
 }
 
-bool HexViewCtrl::Create(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style,
-						const wxValidator& validator, const wxString& name)
+bool HexViewCtrl::Create(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style, const wxString& name)
 {
+#if defined(__WXMSW__)
+	auto pRenderer = wxGraphicsRenderer::GetDirect2DRenderer();
+#else
+	auto pRenderer = wxGraphicsRenderer::GetDefaultRenderer();
+#endif
+	m_blackPen = pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 1)});
+	m_transparentPen = pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 0)});
+	m_grayBrush = pRenderer->CreateBrush(*wxGREY_BRUSH);
+	m_whiteBrush = pRenderer->CreateBrush(*wxWHITE_BRUSH);
+	m_font = pRenderer->CreateFont(GetFont());
+
 	SetBackgroundStyle(wxBG_STYLE_PAINT);
-	if (!wxControl::Create(parent, id, pos, size, style | WS_VSCROLL | WS_HSCROLL, validator, name))
+	if (!wxScrolled<wxWindow>::Create(parent, id, pos, size, style | WS_VSCROLL | WS_HSCROLL, name))
 	{
 		return false;
 	}
-	else
-	{
-		return true;
-	}
+
+
 
 	return true;
 }
@@ -56,35 +54,37 @@ void HexViewCtrl::SetValue(const ReadOnlySequence<uint8_t>& value)
 
 void HexViewCtrl::DoUpdateWindowUI(wxUpdateUIEvent& event)
 {
-	wxControlBase::DoUpdateWindowUI(event);
 	const auto octetCount = static_cast<int>(m_value.size());
 	if (octetCount != 0)
 	{
+		wxClientDC dc(this);
+		wxSize fontSize;
+		dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
 		const auto clientSize = GetClientSize();
-		auto currentFont = GetFont();
-		auto fontPixelSize = currentFont.GetPixelSize();
 		auto numOfLines = (octetCount + 15) / 16;
-		auto viewOfLines = clientSize.GetHeight() / fontPixelSize.GetHeight();
-		if (viewOfLines > numOfLines) viewOfLines = numOfLines;
-
-		bool needUpdate = m_numOfLines != numOfLines || viewOfLines != m_numOfLinesViewing;
-		if (needUpdate)
+		wxSize virtualSize{};
+		virtualSize.y = numOfLines * fontSize.y;
+		virtualSize.x = 16 * fontSize.x * 3 + fontSize.x * 12;
+		bool needSetVirtualSize = m_numOfLines != numOfLines;
+		auto oldVirtualSize = GetVirtualSize();
+		needSetVirtualSize = needSetVirtualSize || (oldVirtualSize != virtualSize);
+		m_numOfLines = numOfLines;
+		if(needSetVirtualSize)
 		{
-			m_numOfLines = numOfLines;
-			m_numOfLinesViewing = viewOfLines;
+			SetScrollRate(1, fontSize.y);
+			SetVirtualSize(virtualSize);
 		}
-
-		SetScrollbar(wxVERTICAL, m_offset, viewOfLines, numOfLines, false);
 	}
-
-	Refresh(false);
 }
 
 void HexViewCtrl::OnPaint(wxPaintEvent& evt)
 {
-	wxPaintDC dc(this);
+	wxAutoBufferedPaintDC dc(this);
+	
 #if defined(__WXMSW__)
-	dc.DrawBitmap(m_backBuffer, 0, 0);
+	Render(dc);
+	 /*wxMemoryDC memDC(m_backBuffer);
+	 dc.Blit(wxPoint(0, 0), m_backBuffer.GetSize(), &memDC, wxPoint(0, 0));*/
 #else
 	Render(dc);
 #endif
@@ -92,127 +92,132 @@ void HexViewCtrl::OnPaint(wxPaintEvent& evt)
 
 void HexViewCtrl::OnSize(wxSizeEvent& evt)
 {
-#if defined(__WXMSW__)
+	
 	m_backBuffer = wxBitmap(GetClientSize());
-#endif
-
-	UpdateWindowUI();
-}
-
-void HexViewCtrl::OnThumbTracked(wxScrollWinEvent& evt)
-{
-	if (evt.GetOrientation() == wxVERTICAL)
-	{
-		m_offset = evt.GetPosition();
-		Refresh();
-		// SetScrollbar(wxVERTICAL, m_offset, m_numOfLinesViewing, m_numOfLines);
-	}
+	wxMemoryDC dc(m_backBuffer);
+	Render(dc);
 }
 
 bool HexViewCtrl::SetFont(const wxFont& font)
 {
 	auto prevFont = GetFont();
-	bool ret = wxControlBase::SetFont(font);
+	bool ret = wxScrolled<wxWindow>::SetFont(font);
 	if (prevFont == font) return ret;
+#if defined(__WXMSW__)
+	auto pRenderer = wxGraphicsRenderer::GetDirect2DRenderer();
+#else
+	auto pRenderer = wxGraphicsRenderer::GetDefaultRenderer();
+#endif
 
-	InvalidateBestSize();
+	m_font = pRenderer->CreateFont(font);
+	UpdateWindowUI();
 	return ret;
 }
 
-void HexViewCtrl::OnScrollWinPageUp(wxScrollWinEvent& evt)
+void HexViewCtrl::Render(wxClientDC& dc)
 {
-	if (evt.GetOrientation() == wxVERTICAL)
-	{
-		const auto oldOffset = m_offset;
-		m_offset = std::max(m_offset - m_numOfLinesViewing, 0);
-		if (oldOffset != m_offset) wxWindow::Refresh(false);
-	}
-}
+#if defined(__WXMSW__)
+	auto pContext = wxGraphicsRenderer::GetDirect2DRenderer()->CreateContext(dc);
+#else
+	auto pContext = wxGraphicsRenderer::GetDefaultRenderer()->CreateContext(dc);
+#endif
 
-void HexViewCtrl::OnScrollWinPageDown(wxScrollWinEvent& evt)
-{
-	if (evt.GetOrientation() == wxVERTICAL)
-	{
-		const auto oldOffset = m_offset;
-		m_offset = std::min(m_offset + m_numOfLinesViewing, m_numOfLines - m_numOfLinesViewing);
-		if (oldOffset != m_offset) Refresh(false);
-	}
-}
-
-void HexViewCtrl::OnScrollWinLineUp(wxScrollWinEvent& evt)
-{
-	if (evt.GetOrientation() == wxVERTICAL)
-	{
-		const auto oldOffset = m_offset;
-		m_offset = std::max(m_offset - 16, 0);
-		if (oldOffset != m_offset) Refresh(false);
-	}
-}
-
-void HexViewCtrl::OnScrollWinLineDown(wxScrollWinEvent& evt)
-{
-	if (evt.GetOrientation() == wxVERTICAL)
-	{
-		const auto oldOffset = m_offset;
-		m_offset = std::min(m_offset + 16, m_numOfLines - m_numOfLinesViewing);
-		if (oldOffset != m_offset) Refresh(false);
-	}
-}
-
-wxSize HexViewCtrl::DoGetBestSize() const
-{
-	auto currentFont = GetFont();
-	auto fontPixelSize = currentFont.GetPixelSize();
-	if (fontPixelSize.x == 0) fontPixelSize.x = fontPixelSize.y / 2;
-
-	return {16 * fontPixelSize.GetWidth() * 3 + fontPixelSize.GetWidth() * 12, fontPixelSize.GetHeight() * 16};
-}
-
-void HexViewCtrl::Render(wxDC& dc)
-{
-	auto pContext = wxGraphicsRenderer::GetDefaultRenderer()->CreateContextFromUnknownDC(dc);
-	const auto end =
-		std::min((m_numOfLinesViewing + m_offset > m_numOfLines
-					? m_numOfLines
-					: m_numOfLinesViewing + m_offset) * 16, static_cast<int>(m_value.size()));
-
-	auto currentFont = GetFont();
-	auto fontPixelSize = currentFont.GetPixelSize();
-	if (fontPixelSize.x == 0) fontPixelSize.x = fontPixelSize.y / 2;
-
-	wxBrush brush(*wxGREY_BRUSH);
-	auto clientSize = GetClientSize();
-	auto oldBrush = dc.GetBrush();
-	auto oldPen = dc.GetPen();
-	pContext->SetBrush(*wxWHITE_BRUSH);
-	pContext->DrawRectangle(0, 0, clientSize.GetWidth(), clientSize.GetHeight());
-	pContext->SetFont(GetFont(), wxColour(0, 0, 0, 255));
-	pContext->SetPen(*wxTRANSPARENT_PEN);
-	pContext->SetBrush(brush);
-	pContext->DrawRectangle(0, 0, fontPixelSize.GetWidth() * 10, clientSize.GetHeight());
-	pContext->SetPen(oldPen);
-	pContext->SetBrush(*wxWHITE_BRUSH);
-	int y = 0;
-	pContext->DrawText(wxString::Format(wxS("%08X"), m_offset * 16), fontPixelSize.GetWidth() >> 1, y);
-	for (int i = m_offset * 16; i < end; ++i)
-	{
-		int x = (i % 16) * fontPixelSize.GetWidth() * 3 + fontPixelSize.GetWidth() * 11;
-		pContext->DrawText(wxString::Format(wxS("%02X "), m_value[i]), x, y);
-		if (i % 16 == 15)
-		{
-			y += fontPixelSize.GetHeight();
-			pContext->DrawText(wxString::Format(wxS("%08X"), (i + 1)), fontPixelSize.GetWidth() >> 1, y);
-		}
-	}
-
+	Render(pContext);
 	delete pContext;
 }
 
-void HexViewCtrl::Refresh(bool eraseBackground, const wxRect* rect)
+void HexViewCtrl::Render(wxMemoryDC& dc)
 {
-	wxWindow::Refresh(eraseBackground, rect);
 #if defined(__WXMSW__)
+	auto pContext = wxGraphicsRenderer::GetDirect2DRenderer()->CreateContext(dc);
+#else
+	auto pContext = wxGraphicsRenderer::GetDefaultRenderer()->CreateContext(dc);
+#endif
+
+	Render(pContext);
+	delete pContext;
+}
+
+void HexViewCtrl::Render(wxGraphicsContext* pContext)
+{
+	auto currentFont = GetFont();
+	wxClientDC dc(this);
+	wxSize fontSize;
+	dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
+
+	pContext->SetContentScaleFactor(GetDPIScaleFactor());
+	pContext->SetFont(m_font);
+	auto clientSize = GetClientSize();
+	pContext->SetBrush(m_whiteBrush);
+	pContext->DrawRectangle(0, 0, clientSize.GetWidth(), clientSize.GetHeight());
+	
+	pContext->SetPen(m_transparentPen);
+	pContext->SetBrush(m_grayBrush);
+	pContext->DrawRectangle(0, 0, fontSize.x * 10, clientSize.GetHeight());
+	pContext->SetPen(m_blackPen);
+	pContext->SetBrush(m_whiteBrush);
+	double y = 0;
+	int offset = GetScrollPos(wxVERTICAL);
+	
+	auto viewOfLines = (clientSize.GetHeight() + ((int)floor(fontSize.y)) - 1) / ((int)floor(fontSize.y));
+
+	const auto end =
+	std::min((viewOfLines + offset > m_numOfLines
+				? m_numOfLines
+				: viewOfLines + offset) * 16, static_cast<int>(m_value.size()));
+
+	pContext->DrawText(wxString::Format(wxS("%08X"), offset * 16), fontSize.x * 0.5, y);
+
+	for (int i = offset * 16; i < end; ++i)
+	{
+		int x = (i % 16) * fontSize.x * 3 + fontSize.x * 11;
+		pContext->DrawText(wxString::Format(wxS("%02X "), m_value[i]), x, y);
+		if (i % 16 == 15)
+		{
+			y += fontSize.y;
+			pContext->DrawText(wxString::Format(wxS("%08X"), (i + 1)), fontSize.x * 0.5, y);
+		}
+	}
+}
+
+void HexViewCtrl::OnScrollWinEvent(wxScrollWinEvent& evt)
+{
+	evt.Skip();
 	wxMemoryDC dc(m_backBuffer);
 	Render(dc);
+}
+
+//void HexViewCtrl::RecalcScrollBar()
+//{
+//	const auto octetCount = static_cast<int>(m_value.size());
+//	if (octetCount != 0)
+//	{
+//		const auto clientSize = GetClientSize();
+//		wxClientDC dc(const_cast<HexViewCtrl*>(this));
+//		auto s = dc.GetTextExtent(wxS("0"));
+//		auto currentFont = GetFont();
+//		auto numOfLines = (octetCount + 15) / 16;
+//		auto viewOfLines = (clientSize.GetHeight() + s.y - 1) / s.y;
+//		if (viewOfLines > numOfLines) viewOfLines = numOfLines;
+//
+//		bool needUpdate = m_numOfLines != numOfLines || viewOfLines != m_numOfLinesViewing;
+//		SetScrollbar(wxVERTICAL, m_offset, viewOfLines, numOfLines, false);
+//		if (needUpdate)
+//		{
+//			m_numOfLines = numOfLines;
+//			m_numOfLinesViewing = viewOfLines;
+//			Refresh(false);
+//			Update();
+//		}
+//
+//	}
+//}
+
+void HexViewCtrl::Refresh(bool eraseBackground, const wxRect* rect)
+{
+#if defined(__WXMSW__)
+	// wxMemoryDC dc(m_backBuffer);
+	// Render(dc);
 #endif
+	wxScrolled<wxWindow>::Refresh(eraseBackground, rect);
 }
