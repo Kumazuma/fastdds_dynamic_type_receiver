@@ -27,10 +27,7 @@ public:
 protected:
 	void OnPaint(wxPaintEvent& evt);
 	void OnSize(wxSizeEvent& evt);
-	void Render(wxClientDC& dc);
 	void Render(wxMemoryDC& dc);
-	void Render(wxGraphicsContext* context);
-	void OnScrollWinEvent(wxScrollWinEvent& evt);
 private:
 	ReadOnlySequence<uint8_t> m_value;
 	int m_numOfLines;
