@@ -92,6 +92,17 @@ void HexViewCtrl::OnSize(wxSizeEvent& evt)
 	m_backBuffer = wxBitmap(size.x, size.y, dc);
 }
 
+wxSize HexViewCtrl::DoGetBestClientSize() const
+{
+	wxClientDC dc(const_cast<HexViewCtrl*>(this));
+	wxSize fontSize;
+	dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
+	wxSize virtualSize{};
+	virtualSize.y = 16 * fontSize.y;
+	virtualSize.x = 16 * fontSize.x * 3 + fontSize.x * 12;
+	return virtualSize;
+}
+
 bool HexViewCtrl::SetFont(const wxFont& font)
 {
 	auto prevFont = GetFont();

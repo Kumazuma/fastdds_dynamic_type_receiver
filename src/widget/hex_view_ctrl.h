@@ -27,6 +27,7 @@ public:
 protected:
 	void OnPaint(wxPaintEvent& evt);
 	void OnSize(wxSizeEvent& evt);
+	wxSize DoGetBestClientSize() const override;
 	void Render(wxMemoryDC& dc);
 private:
 	ReadOnlySequence<uint8_t> m_value;
