@@ -8,7 +8,8 @@ template <typename T>
 class ReadOnlySequence
 {
 public:
-	ReadOnlySequence() = default;
+	ReadOnlySequence()
+	: m_length(0) {};
 
 	ReadOnlySequence(std::vector<T>&& sequence)
 	: m_vector(new std::vector(std::move(sequence))) { m_length = m_vector->size(); }
