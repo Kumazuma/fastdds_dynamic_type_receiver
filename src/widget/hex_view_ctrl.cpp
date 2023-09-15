@@ -23,16 +23,8 @@ HexViewCtrl::HexViewCtrl(wxWindow* parent, wxWindowID id, const wxPoint& pos, co
 
 bool HexViewCtrl::Create(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style, const wxString& name)
 {
-#if defined(__WXMSW__)
-	auto pRenderer = wxGraphicsRenderer::GetDirect2DRenderer();
-#else
-	auto pRenderer = wxGraphicsRenderer::GetDefaultRenderer();
-#endif
-	m_blackPen = pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 1)});
-	m_transparentPen = pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 0)});
-	m_grayBrush = pRenderer->CreateBrush(*wxGREY_BRUSH);
-	m_whiteBrush = pRenderer->CreateBrush(*wxWHITE_BRUSH);
-	m_font = pRenderer->CreateFont(GetFont());
+	m_pRenderer = wxGraphicsRenderer::GetDirect2DRenderer();
+
 
 	SetBackgroundStyle(wxBG_STYLE_PAINT);
 	if (!wxScrolled<wxWindow>::Create(parent, id, pos, size, style | wxFULL_REPAINT_ON_RESIZE, name))
@@ -40,6 +32,15 @@ bool HexViewCtrl::Create(wxWindow* parent, wxWindowID id, const wxPoint& pos, co
 		return false;
 	}
 
+	m_blackPen = m_pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 1)});
+	m_transparentPen = m_pRenderer->CreatePen(wxGraphicsPenInfo{wxColour(0, 0, 0, 0)});
+	m_grayBrush = m_pRenderer->CreateBrush(*wxGREY_BRUSH);
+	m_whiteBrush = m_pRenderer->CreateBrush(*wxWHITE_BRUSH);
+	m_font = m_pRenderer->CreateFont(GetFont());
+
+	wxClientDC dc(this);
+	dc.SetFont(GetFont());
+	dc.GetTextExtent(wxS("0"), &m_widthOfChar, &m_lineHeight);
 	return true;
 }
 
@@ -55,8 +56,11 @@ void HexViewCtrl::DoUpdateWindowUI(wxUpdateUIEvent& event)
 	if (octetCount != 0)
 	{
 		wxClientDC dc(this);
+		dc.SetFont(GetFont());
 		wxSize fontSize;
 		dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
+		m_lineHeight = fontSize.y;
+		m_widthOfChar = fontSize.x;
 		const auto clientSize = GetClientSize();
 		auto numOfLines = (octetCount + 15) / 16;
 		wxSize virtualSize{};
@@ -77,29 +81,31 @@ void HexViewCtrl::DoUpdateWindowUI(wxUpdateUIEvent& event)
 void HexViewCtrl::OnPaint(wxPaintEvent& evt)
 {
 #if defined(__WXMSW__)
-	wxBufferedPaintDC dc(this, m_backBuffer, wxBUFFER_CLIENT_AREA);
+	wxBufferedPaintDC dc(this, m_backBuffer);
 #else
 	wxPaintDC dc(this);
 #endif
+	dc.Clear();
 	PrepareDC(dc);
-	Render(dc);
+	auto context = m_pRenderer->CreateContext(dc);
+	Render(context, wxPoint{});
+	delete context;
 }
 
 void HexViewCtrl::OnSize(wxSizeEvent& evt)
 {
+#if defined(__WXMSW__)
 	wxClientDC dc(this);
 	auto size = evt.GetSize();
 	m_backBuffer = wxBitmap(size.x, size.y, dc);
+#endif
 }
 
 wxSize HexViewCtrl::DoGetBestClientSize() const
 {
-	wxClientDC dc(const_cast<HexViewCtrl*>(this));
-	wxSize fontSize;
-	dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
 	wxSize virtualSize{};
-	virtualSize.y = 16 * fontSize.y;
-	virtualSize.x = 16 * fontSize.x * 3 + fontSize.x * 12;
+	virtualSize.y = 16 * m_lineHeight;
+	virtualSize.x = 16 * 3 * m_widthOfChar + m_widthOfChar * 12;
 	return virtualSize;
 }
 
@@ -109,6 +115,8 @@ bool HexViewCtrl::SetFont(const wxFont& font)
 	bool ret = wxScrolled<wxWindow>::SetFont(font);
 	if (prevFont == font) return ret;
 	UpdateWindowUI();
+	m_font = m_pRenderer->CreateFont(font);
+
 	return ret;
 }
 
@@ -144,6 +152,38 @@ void HexViewCtrl::Render(wxMemoryDC& dc)
 		{
 			y += fontSize.y;
 			dc.DrawText(wxString::Format(wxS("%08X"), (i + 1)), 5, y);
+		}
+	}
+}
+
+void HexViewCtrl::Render(wxGraphicsContext* context, const wxPoint& origin)
+{
+	auto virtualSize = GetVirtualSize();
+	context->SetFont(m_font);
+	auto clientSize = GetClientSize();
+	context->SetPen(m_transparentPen);
+	int offset = GetScrollPos(wxVERTICAL);
+	int y = 0;
+	context->SetBrush(m_grayBrush);
+	context->DrawRectangle(0, y, m_widthOfChar * 10, virtualSize.GetHeight() + m_lineHeight);
+	context->SetPen(m_blackPen);
+	const auto viewOfLines = (clientSize.GetHeight() + m_lineHeight - 1) / m_lineHeight;
+
+	const auto end =
+		std::min((viewOfLines + offset + 1 > m_numOfLines
+			? m_numOfLines
+			: viewOfLines + offset + 1) * 16, static_cast<int>(m_value.size()));
+
+	context->DrawText(wxString::Format(wxS("%08X"), offset * 16), 5, 0);
+
+	for (int i = std::max(0, (offset - 1)* 16); i < end; ++i)
+	{
+		y = (i / 16) * m_lineHeight;
+		int x = (i % 16) * m_widthOfChar * 3 + m_widthOfChar * 11;
+		context->DrawText(wxString::Format(wxS("%02X "), m_value[i]), x, y);
+		if (i % 16 == 15 && (i + 1) != end)
+		{
+			context->DrawText(wxString::Format(wxS("%08X"), (i + 1)), 5, (1 + i / 16) * m_lineHeight);
 		}
 	}
 }

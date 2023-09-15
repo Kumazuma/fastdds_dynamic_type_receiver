@@ -29,14 +29,18 @@ protected:
 	void OnSize(wxSizeEvent& evt);
 	wxSize DoGetBestClientSize() const override;
 	void Render(wxMemoryDC& dc);
+	void Render(wxGraphicsContext* context, const wxPoint& origin);;
 private:
 	ReadOnlySequence<uint8_t> m_value;
 	int m_numOfLines;
+	wxGraphicsRenderer* m_pRenderer;
 	wxGraphicsBrush m_whiteBrush;
 	wxGraphicsBrush m_grayBrush;
 	wxGraphicsPen m_blackPen;
 	wxGraphicsPen m_transparentPen;
 	wxGraphicsFont m_font;
+	int m_lineHeight;
+	int m_widthOfChar;
 #if defined(__WXMSW__)
 	wxBitmap m_backBuffer;
 #endif
