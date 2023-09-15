@@ -46,6 +46,11 @@ MainForm::MainForm(wxEvtHandler* view)
 	pProp->ChangeFlag(wxPG_PROP_READONLY, true);
 	std::vector<uint8_t> bigPayload;
 	bigPayload.resize(1024);
+	for(auto& it: bigPayload)
+	{
+		it = rand() % 256;
+	}
+
 	std::any dummy(ReadOnlyUint8Sequence(std::move(bigPayload)));
 	ShowData(dummy);
 }
