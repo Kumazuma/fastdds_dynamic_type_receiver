@@ -26,6 +26,7 @@ public:
 	void Refresh(bool eraseBackground = true, const wxRect* rect = nullptr) override;
 protected:
 	void OnPaint(wxPaintEvent& evt);
+	void MSWUpdateFontOnDPIChange(const wxSize& newDPI) override;
 	void OnSize(wxSizeEvent& evt);
 	wxSize DoGetBestClientSize() const override;
 	void Render(wxMemoryDC& dc);

@@ -92,6 +92,13 @@ void HexViewCtrl::OnPaint(wxPaintEvent& evt)
 	delete context;
 }
 
+void HexViewCtrl::MSWUpdateFontOnDPIChange(const wxSize& newDPI)
+{
+	wxScrolled<wxWindow>::MSWUpdateFontOnDPIChange(newDPI);
+	m_font = m_pRenderer->CreateFont(GetFont());
+	UpdateWindowUI();
+}
+
 void HexViewCtrl::OnSize(wxSizeEvent& evt)
 {
 #if defined(__WXMSW__)
@@ -159,6 +166,7 @@ void HexViewCtrl::Render(wxMemoryDC& dc)
 void HexViewCtrl::Render(wxGraphicsContext* context, const wxPoint& origin)
 {
 	auto virtualSize = GetVirtualSize();
+	context->SetContentScaleFactor(GetContentScaleFactor());
 	context->SetFont(m_font);
 	auto clientSize = GetClientSize();
 	context->SetPen(m_transparentPen);
