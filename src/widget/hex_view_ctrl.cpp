@@ -2,10 +2,16 @@
 #include <wx/dcbuffer.h>
 #include <wx/graphics.h>
 
+wxDEFINE_EVENT(wxEVT_HEX_VIEW_SELECTION_CHANGED, wxCommandEvent);
+
 BEGIN_EVENT_TABLE(HexViewCtrl, wxScrolled<wxWindow>)
 	EVT_PAINT(HexViewCtrl::OnPaint)
 	EVT_UPDATE_UI(wxID_ANY, HexViewCtrl::DoUpdateWindowUI)
 	EVT_SIZE(HexViewCtrl::OnSize)
+	EVT_LEFT_DOWN(HexViewCtrl::OnMouseEvent)
+	EVT_MOTION(HexViewCtrl::OnMouseEvent)
+	EVT_LEFT_UP(HexViewCtrl::OnMouseEvent)
+	EVT_LEAVE_WINDOW(HexViewCtrl::OnMouseLeave)
 END_EVENT_TABLE()
 
 HexViewCtrl::HexViewCtrl()
@@ -23,7 +29,7 @@ HexViewCtrl::HexViewCtrl(wxWindow* parent, wxWindowID id, const wxPoint& pos, co
 
 bool HexViewCtrl::Create(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style, const wxString& name)
 {
-	m_pRenderer = wxGraphicsRenderer::GetDirect2DRenderer();
+	m_pRenderer = wxGraphicsRenderer::GetDefaultRenderer();
 
 
 	SetBackgroundStyle(wxBG_STYLE_PAINT);
@@ -58,9 +64,21 @@ void HexViewCtrl::DoUpdateWindowUI(wxUpdateUIEvent& event)
 		wxClientDC dc(this);
 		dc.SetFont(GetFont());
 		wxSize fontSize;
+		m_fontMatrics = dc.GetFontMetrics();
 		dc.GetTextExtent(wxS("0"), &fontSize.x, &fontSize.y);
-		m_lineHeight = fontSize.y;
+		m_lineHeight = m_fontMatrics.height;
+		if(m_fontMatrics.internalLeading < 4)
+		{
+			m_fontMatrics.internalLeading = 4;
+			m_lineHeight += 4; 
+		}
+
 		m_widthOfChar = fontSize.x;
+		if(m_widthOfChar < m_fontMatrics.averageWidth)
+		{
+			m_widthOfChar = m_fontMatrics.averageWidth;
+		}
+
 		const auto clientSize = GetClientSize();
 		auto numOfLines = (octetCount + 15) / 16;
 		wxSize virtualSize{};
@@ -80,15 +98,22 @@ void HexViewCtrl::DoUpdateWindowUI(wxUpdateUIEvent& event)
 
 void HexViewCtrl::OnPaint(wxPaintEvent& evt)
 {
+	wxRect box{};
 #if defined(__WXMSW__)
 	wxBufferedPaintDC dc(this, m_backBuffer);
 #else
 	wxPaintDC dc(this);
 #endif
-	dc.Clear();
 	PrepareDC(dc);
+	dc.Clear();
 	auto context = m_pRenderer->CreateContext(dc);
 	Render(context, wxPoint{});
+
+	if(m_selectionBegin != -1)
+	{
+		RenderSelectionOverlay(context);
+	}
+
 	delete context;
 }
 
@@ -191,8 +216,156 @@ void HexViewCtrl::Render(wxGraphicsContext* context, const wxPoint& origin)
 		context->DrawText(wxString::Format(wxS("%02X "), m_value[i]), x, y);
 		if (i % 16 == 15 && (i + 1) != end)
 		{
-			context->DrawText(wxString::Format(wxS("%08X"), (i + 1)), 5, (1 + i / 16) * m_lineHeight);
+			context->DrawText(wxString::Format(wxS("%08X"), (i + 1)), 5, y + m_lineHeight);
 		}
+	}
+}
+
+void HexViewCtrl::RenderSelectionOverlay(wxGraphicsContext* context)
+{
+	auto offsetStart = m_selectionBegin;
+	auto offsetEnd = m_selectionEnd == -1 ? m_selectionUnderCursor : m_selectionEnd;
+	if(offsetStart > offsetEnd)
+		std::swap(offsetStart, offsetEnd);
+
+	const auto clientSize = GetClientSize();
+	const auto offset = GetScrollPos(wxVERTICAL);
+	const auto viewOfLines = (clientSize.GetHeight() + m_lineHeight - 1) / m_lineHeight;
+
+	const auto beginRow = std::max(offsetStart / 16, offset - 1);
+	const auto endRow = std::min(offsetEnd / 16 + 1, offset + viewOfLines + 1);
+	auto b = context->CreateBrush(wxBrush(wxColor(100, 100, 255, 128)));
+	context->SetBrush(b);
+	for(int row = beginRow; row < endRow; ++row)
+	{
+		int colsStart = offsetStart <= row * 16 ? 0 : (offsetStart - row * 16);
+		int colsEnd = (row + 1) * 16 <= offsetEnd ? 15 : (offsetEnd - row * 16);
+		context->DrawRectangle(colsStart * m_widthOfChar * 3 + m_widthOfChar * 11, row * m_lineHeight, (colsEnd - colsStart + 1) * 3 * m_widthOfChar - m_widthOfChar, m_lineHeight + 1);
+	}
+}
+
+void HexViewCtrl::OnMouseEvent(wxMouseEvent& evt)
+{
+	if(m_lineHeight == 0 && m_value.size() != 0)
+	{
+		return;
+	}
+
+	if(evt.LeftDown() || (evt.Dragging() && m_selectionBegin != -1))
+	{
+		auto logicalPosition = CalcUnscrolledPosition(evt.GetPosition());
+		int row = logicalPosition.y / m_lineHeight;
+		int cols = (logicalPosition.x - m_widthOfChar * 11) / (m_widthOfChar * 3);
+		if(cols < 0 || cols > 15)
+		{
+			return;
+		}
+
+		int offset = row * 16 + cols;
+		if(offset >= m_value.size())
+		{
+			return;
+		}
+
+		const bool needRepaint = m_selectionUnderCursor != offset;
+		m_selectionUnderCursor = offset;
+		if(m_selectionBegin == -1)
+		{
+			m_selectionBegin = m_selectionUnderCursor;
+		}
+		else if(m_selectionEnd != -1)
+		{
+			m_selectionBegin = m_selectionUnderCursor;
+			m_selectionEnd = -1;
+		}
+
+		if(needRepaint)
+		{
+			Refresh(true);
+			if(m_selectionUnderCursor != -1)
+			{
+				wxCommandEvent event(wxEVT_HEX_VIEW_SELECTION_CHANGED, GetId());
+				event.SetEventObject(this);
+				event.SetInt(m_selectionUnderCursor);
+				HandleWindowEvent(event);
+			}
+		}
+	}
+	else if(m_selectionBegin != -1 && m_selectionEnd == -1)
+	{
+		// Finish selection
+		auto logicalPosition = CalcUnscrolledPosition(evt.GetPosition());
+		int row = logicalPosition.y / m_lineHeight;
+		int cols = (logicalPosition.x - m_widthOfChar * 11) / (m_widthOfChar * 3);
+		if(cols < 0 || cols > 15)
+		{
+			m_selectionEnd = m_selectionUnderCursor;
+			m_selectionUnderCursor = -1;
+			return;
+		}
+
+		int offset = row * 16 + cols;
+		if(offset >= m_value.size())
+		{
+			offset = m_value.size() - 1;
+		}
+
+		const bool needRepaint = m_selectionUnderCursor != offset;
+		m_selectionUnderCursor = offset;
+		m_selectionEnd = m_selectionUnderCursor;
+		if(needRepaint)
+		{
+			Refresh(true);
+			if(m_selectionUnderCursor != -1)
+			{
+				wxCommandEvent event(wxEVT_HEX_VIEW_SELECTION_CHANGED, GetId());
+				event.SetEventObject(this);
+				event.SetInt(m_selectionUnderCursor);
+				HandleWindowEvent(event);
+			}
+		}
+
+		m_selectionUnderCursor = -1;
+	}
+}
+
+void HexViewCtrl::OnMouseLeave(wxMouseEvent& evt)
+{
+	if(evt.LeftDown() && m_selectionBegin != -1 && m_selectionEnd == -1 && m_value.size() != 0)
+	{
+		// Finish selection
+		auto logicalPosition = CalcUnscrolledPosition(evt.GetPosition());
+		int row = logicalPosition.y / m_lineHeight;
+		int cols = (logicalPosition.x - m_widthOfChar * 11) / (m_widthOfChar * 3);
+		if(cols < 0 || cols > 15)
+		{
+			m_selectionEnd = m_selectionUnderCursor;
+			m_selectionUnderCursor = -1;
+			return;
+		}
+
+		int offset = row * 16 + cols;
+		if(offset >= m_value.size())
+		{
+			offset = m_value.size() - 1;
+		}
+
+		const bool needRepaint = m_selectionUnderCursor != offset;
+		m_selectionUnderCursor = offset;
+		m_selectionEnd = m_selectionUnderCursor;
+		if(needRepaint)
+		{
+			Refresh(true);
+			if(m_selectionUnderCursor != -1)
+			{
+				wxCommandEvent event(wxEVT_HEX_VIEW_SELECTION_CHANGED, GetId());
+				event.SetEventObject(this);
+				event.SetInt(m_selectionUnderCursor);
+				HandleWindowEvent(event);
+			}
+		}
+
+		m_selectionUnderCursor = -1;
 	}
 }
 

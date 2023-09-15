@@ -78,6 +78,8 @@ template <>
 class SequenceViewDialog<uint8_t> : public wxDialog
 {
 	DECLARE_EVENT_TABLE();
+
+	enum class TextCtrlIndex;
 public:
 	SequenceViewDialog(wxWindow* parent, wxWindowID id, const wxString& title);
 	void SetValue(const ReadOnlySequence<uint8_t>& value);
@@ -85,9 +87,17 @@ public:
 protected:
 	void OnCommandSaveFile(wxCommandEvent& evt);
 	void OnCommandOpenAsImage(wxCommandEvent& evt);
+	void OnCommandHexViewSelectionChanged(wxCommandEvent& evt);
+	void OnPropGridValueChanged(wxPropertyGridEvent& evt);
+
+private:
+	void ShowProp(int index);
 
 private:
 	wxToolBar* m_pToolbar;
 	HexViewCtrl* m_pHexViewCtrl;
 	ReadOnlySequence<uint8_t> m_value;
+	wxPropertyGrid* m_pPropGrid;
+	bool m_showAsBigEndian;
+	int m_latestIndex;
 };

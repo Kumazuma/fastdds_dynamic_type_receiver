@@ -30,7 +30,10 @@ protected:
 	void OnSize(wxSizeEvent& evt);
 	wxSize DoGetBestClientSize() const override;
 	void Render(wxMemoryDC& dc);
-	void Render(wxGraphicsContext* context, const wxPoint& origin);;
+	void Render(wxGraphicsContext* context, const wxPoint& origin);
+	void RenderSelectionOverlay(wxGraphicsContext* context);
+	void OnMouseEvent(wxMouseEvent& evt);
+	void OnMouseLeave(wxMouseEvent& evt);
 private:
 	ReadOnlySequence<uint8_t> m_value;
 	int m_numOfLines;
@@ -40,9 +43,15 @@ private:
 	wxGraphicsPen m_blackPen;
 	wxGraphicsPen m_transparentPen;
 	wxGraphicsFont m_font;
+	int m_selectionBegin;
+	int m_selectionUnderCursor;
+	int m_selectionEnd;
+	wxFontMetrics m_fontMatrics;
 	int m_lineHeight;
 	int m_widthOfChar;
 #if defined(__WXMSW__)
 	wxBitmap m_backBuffer;
 #endif
 };
+
+wxDECLARE_EVENT(wxEVT_HEX_VIEW_SELECTION_CHANGED, wxCommandEvent);
