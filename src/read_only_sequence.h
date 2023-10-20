@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <memory>
 #include <wx/propgrid/propgriddefs.h>
 #include <wx/variant.h>
@@ -66,6 +67,7 @@ using ReadOnlyFloatSequence = ReadOnlySequence<float>;
 using ReadOnlyDoubleSequence = ReadOnlySequence<double>;
 using ReadOnlyStringSequence = ReadOnlySequence<std::string>;
 using ReadOnlyWstringSequence = ReadOnlySequence<std::wstring>;
+using ReadOnlyAnySequence = ReadOnlySequence<std::any>;
 
 WX_PG_DECLARE_VARIANT_DATA(ReadOnlyInt8Sequence)
 WX_PG_DECLARE_VARIANT_DATA(ReadOnlyInt16Sequence)
@@ -79,3 +81,4 @@ WX_PG_DECLARE_VARIANT_DATA(ReadOnlyFloatSequence)
 WX_PG_DECLARE_VARIANT_DATA(ReadOnlyDoubleSequence)
 WX_PG_DECLARE_VARIANT_DATA(ReadOnlyStringSequence)
 WX_PG_DECLARE_VARIANT_DATA(ReadOnlyWstringSequence)
+WX_PG_DECLARE_VARIANT_DATA(ReadOnlyAnySequence)

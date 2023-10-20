@@ -1,10 +1,13 @@
 #pragma once
 
-#include <wx/wx.h>
+#include <any>
 #include <wx/grid.h>
+#include <wx/wx.h>
 #include "../read_only_sequence.h"
 #include "hex_view_ctrl.h"
 
+
+class wxPropertyGridPage;
 template <typename T>
 class SequenceViewDialog : public wxDialog
 {
@@ -100,4 +103,28 @@ private:
 	wxPropertyGrid* m_pPropGrid;
 	bool m_showAsBigEndian;
 	int m_latestIndex;
+};
+
+// Specialization for struct sequence
+template<>
+class SequenceViewDialog<std::any> : public wxDialog
+{
+	DECLARE_EVENT_TABLE();
+
+public:
+	SequenceViewDialog(wxWindow* parent, wxWindowID id, const wxString& title);
+	void SetValue(const ReadOnlySequence<std::any>& value);
+	void ShowData(int index);
+	void ShowAny(const std::any& data, const wxString& name, wxPGProperty* parent);
+	void ShowStruct(const std::vector<std::pair<std::string, std::any>>& data,
+												  const wxString& name, wxPGProperty* parent);
+
+protected:
+	void OnIndexChanged(wxSpinEvent& evt);
+
+private:
+	wxSpinCtrl* m_pIndexComboBox;
+	wxPropertyGridManager* m_pPropGrid;
+	wxPropertyGridPage* m_pPropGridPage;
+	ReadOnlySequence<std::any> m_value;
 };

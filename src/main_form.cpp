@@ -225,8 +225,8 @@ void MainForm::ShowAny(const std::any& data, const wxString& name, wxPGProperty*
 	}
 	else if (data.type() == typeid(ReadOnlySequence<std::any>))
 	{
-		// TODO: Object List View
-		return;
+		pProperty = new ReadOnlySequenceProperty<std::any>(name, name, std::any_cast<ReadOnlySequence<std::any>>(data));
+		pProperty->ChangeFlag(wxPG_PROP_ACTIVE_BTN, true);
 	}
 	else { return; }
 
